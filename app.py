@@ -32,7 +32,7 @@ if st.button("Generate Image"):
     with st.spinner("Generating..."):
         image = pipe(prompt, num_inference_steps=steps, guidance_scale=7.5).images[0]
 
-    st.image(image, caption=f"Generated Image ({steps} steps)", use_column_width=True)
+    st.image(image, caption=f"Generated Image ({steps} steps)", use_container_width=True)
 
     prompt_dir = os.path.join(output_dir, prompt.replace(" ", "_"))
     os.makedirs(prompt_dir, exist_ok=True)
