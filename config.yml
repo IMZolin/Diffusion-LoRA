@@ -1,0 +1,2 @@
+BASE_MODEL_PATH: "CompVis/stable-diffusion-v1-4"
+LORA_MODEL_PATH: "sayakpaul/sd-model-finetuned-lora-t4"
