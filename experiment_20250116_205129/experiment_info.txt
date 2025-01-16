@@ -1,7 +1,0 @@
-lora_rank: 128
-lora_alpha: 64
-num_epochs: 20
-learning_rate: 5e-05
-device: cuda
-accumulation_steps: 4
-timestamp: 20250116_205129
