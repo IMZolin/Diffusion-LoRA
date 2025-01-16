@@ -31,7 +31,7 @@ def generate_image(pipe, prompt, save_path="test_lora_all_sd.png"):
     pipe.vae.eval()
     pipe.text_encoder.eval()
     with torch.inference_mode():
-        image = pipe(prompt, num_inference_steps=30, guidance_scale=7.5).images[0]
+        image = pipe(prompt, num_inference_steps=50, guidance_scale=7.5).images[0]
     image.save(save_path)
     print(f"Generated picture save in : {save_path}")
 
