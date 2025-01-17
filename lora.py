@@ -1,3 +1,4 @@
+import os
 import torch
 from torch import nn
 
@@ -9,6 +10,7 @@ class LoRALinear(nn.Module):
         self.r = r
         self.alpha = alpha
         self.scale = alpha / r
+        self.is_active = True
         
         self.weight = nn.Parameter(original_linear.weight.data, requires_grad=False)
         self.bias = nn.Parameter(original_linear.bias.data, requires_grad=False) if original_linear.bias is not None else None
@@ -29,9 +31,10 @@ class LoRALinear(nn.Module):
         if self.bias is not None:
             result += self.bias
         
-        lora_out = x @ lora_A.T
-        lora_out = lora_out @ lora_B.T
-        result += self.scale * lora_out
+        if self.is_active:
+            lora_out = x @ lora_A.T
+            lora_out = lora_out @ lora_B.T
+            result += self.scale * lora_out
         
         return result
 
@@ -57,3 +60,57 @@ def apply_lora_replacement(models, lora_rank, lora_alpha):
         for name, module_ in model.named_modules():
             if isinstance(module_, LoRALinear):
                 print(f"LoRA-change: {name}")
+                
+                
+def save_lora_weights(model, save_path):
+    """ Save only lora wieghts."""
+    lora_weights = {}
+    for name, module in model.named_modules():
+        if isinstance(module, LoRALinear):
+            lora_weights[name] = {
+                "lora_A": module.lora_A.cpu().detach(),
+                "lora_B": module.lora_B.cpu().detach()
+            }
+    torch.save(lora_weights, save_path)
+    print(f"LoRA weights saved to {save_path}")
+
+
+def load_lora_weights(model, load_path):
+    """ Loads only LoRA weights weights."""
+    lora_weights = torch.load(load_path, map_location=torch.device('cpu'))
+    for name, module in model.named_modules():
+        if isinstance(module, LoRALinear) and name in lora_weights:
+            module.lora_A.data = lora_weights[name]["lora_A"].to(module.lora_A.device)
+            module.lora_B.data = lora_weights[name]["lora_B"].to(module.lora_B.device)
+            print(f"Loaded LoRA weights for {name}")
+
+
+def save_all_lora_weights(models, save_dir):
+    """ Saves LoRA weights for arbitrary number of models."""
+    os.makedirs(save_dir, exist_ok=True)
+    for model_name, model in models.items():
+        save_path = os.path.join(save_dir, f"{model_name}_lora_weights.pth")
+        save_lora_weights(model, save_path)
+
+
+def load_all_lora_weights(models, save_dir):
+    """ Loads LoRA weights for arbitrary number of models."""
+    for model_name, model in models.items():
+        load_path = os.path.join(save_dir, f"{model_name}_lora_weights.pth")
+        load_lora_weights(model, load_path)
+
+
+def disable_lora(model, output=True):
+    for name, module_ in model.named_modules():
+        if isinstance(module_, LoRALinear):
+            module_.is_active = False
+            if output:
+                print(f"LoRA disabled: {name}")
+            
+
+def enable_lora(model, output=True):
+    for name, module_ in model.named_modules():
+        if isinstance(module_, LoRALinear):
+            module_.is_active = True
+            if output:
+                print(f"LoRA enabled: {name}")
