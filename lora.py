@@ -2,6 +2,8 @@ import os
 import torch
 from torch import nn
 
+from model import initialize_pipeline, load_models
+
 class LoRALinear(nn.Module):
     def __init__(self, original_linear: nn.Linear, r: int = 4, alpha: float = 1.0):
         super().__init__()
@@ -114,3 +116,23 @@ def enable_lora(model, output=True):
             module_.is_active = True
             if output:
                 print(f"LoRA enabled: {name}")
+
+
+def load_model(lora, config, rank=None, alpha=None, device="cuda"):
+    vae, unet, text_encoder, tokenizer, noise_scheduler = load_models()
+
+    if lora:
+        print("Applying LoRA...")
+        apply_lora_replacement([unet, vae, text_encoder], lora_rank=rank, lora_alpha=alpha)
+        disable_lora(unet)  
+        print("LoRA applied to models.")
+
+    pipe = initialize_pipeline(
+        vae=vae,
+        unet=unet,
+        text_encoder=text_encoder,
+        tokenizer=tokenizer,
+        noise_scheduler=noise_scheduler,
+        device=device
+    )
+    return pipe

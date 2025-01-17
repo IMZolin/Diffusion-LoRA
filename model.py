@@ -13,6 +13,11 @@ def load_models():
     return vae, unet, text_encoder, tokenizer, noise_scheduler
 
 def initialize_pipeline(vae, unet, text_encoder, tokenizer, noise_scheduler, device):
+    vae.to(device, dtype=torch.float16)
+    unet.to(device, dtype=torch.float16)
+    # text_encoder.to(device, dtype=torch.float16)
+    # text_encoder.to_empty(device, True)
+    text_encoder.to_empty(device=device).to(dtype=torch.float16)
     from diffusers import StableDiffusionPipeline
     return StableDiffusionPipeline(
         vae=vae,

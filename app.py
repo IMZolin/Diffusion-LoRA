@@ -1,68 +1,79 @@
 import streamlit as st
 import os
 import torch
-from PIL import Image
-from dataset import create_dataloader
 from utils import load_config
-from metrics import calculate_clip_score
-from model import load_model
-from train import train_lora 
+from diffusers import AutoencoderKL, UNet2DConditionModel, DDPMScheduler
+from transformers import CLIPTextModel, CLIPTokenizer
+from model import (
+    initialize_pipeline,
+    load_models
+)
 
-device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+from lora import (
+    apply_lora_replacement,
+    enable_lora,
+    disable_lora
+)
+# Function to initialize models and pipeline
+def setup_pipeline(device, lora_rank, lora_alpha):
+    config = load_config()
+    vae, unet, text_encoder, tokenizer, noise_scheduler = load_models()
+    apply_lora_replacement(models=[unet, vae, text_encoder], lora_rank=lora_rank, lora_alpha=lora_alpha)
+    pipe = initialize_pipeline(vae, unet, text_encoder, tokenizer, noise_scheduler, device)
+    return pipe, vae, unet, text_encoder
 
-st.title("Stable Diffusion Image Generation with LoRA")
+# Streamlit App
+st.title("Image Generation with LoRA Customization")
 
-# Sidebar configuration
-with st.sidebar:
-    st.header("Experiment Configuration")
-    lora_option = st.checkbox("Enable LoRA")
-    
-    if lora_option:
-        rank = st.selectbox("LoRA Rank", [4, 8, 16])
-        alpha = st.slider("LoRA Alpha", 0.1, 2.0, 1.0)
-    else:
-        rank = alpha = None
-    
-    st.header("Prompt and Inference Settings")
-    prompt = st.text_input("Enter prompt:", "A beautiful landscape with mountains and rivers.")
-    steps = st.slider("Select number of inference steps", 20, 50, 30)
-    output_dir = "results"
-    os.makedirs(output_dir, exist_ok=True)
+# Sidebar for settings
+st.sidebar.header("Settings")
+device = "cuda" if torch.cuda.is_available() else "cpu"
+lora_rank = st.sidebar.slider("LoRA Rank", min_value=4, max_value=256, value=128)
+lora_alpha = st.sidebar.slider("LoRA Alpha", min_value=1.0, max_value=128.0, value=64.0)
+num_inference_steps = st.sidebar.number_input("Number of Inference Steps", min_value=1, max_value=100, value=50)
 
-config = load_config()  
+# Enable or disable specific model components
+st.sidebar.subheader("Enable/Disable Model Components")
+enable_vae = st.sidebar.checkbox("Enable VAE LoRA", value=True)
+enable_unet = st.sidebar.checkbox("Enable UNet LoRA", value=True)
+enable_text_encoder = st.sidebar.checkbox("Enable Text Encoder LoRA", value=True)
 
-pipe = load_model(lora=lora_option, config=config, rank=rank, alpha=alpha, device=device)
+# Prompt input
+prompt = st.text_input("Enter your prompt:", "The wolf from the cartoon 'Well, Wait!'")
 
+# Load and setup pipeline
+st.write("Initializing models...")
+pipe, vae, unet, text_encoder = setup_pipeline(device, lora_rank, lora_alpha)
+
+# Apply enable/disable settings
+if enable_vae:
+    enable_lora(vae, output=False)
+else:
+    disable_lora(vae, output=False)
+
+if enable_unet:
+    enable_lora(unet, output=False)
+else:
+    disable_lora(unet, output=False)
+
+if enable_text_encoder:
+    enable_lora(text_encoder, output=False)
+else:
+    disable_lora(text_encoder, output=False)
+
+st.write("Models initialized successfully!")
+
+# Generate image
 if st.button("Generate Image"):
-    st.write(f"Generating image with prompt: '{prompt}' and {steps} steps.")
-    with st.spinner("Generating..."):
-        image = pipe(prompt, num_inference_steps=steps, guidance_scale=7.5).images[0]
-
-    st.image(image, caption=f"Generated Image ({steps} steps)", use_container_width=True)
-
-    prompt_dir = os.path.join(output_dir, prompt.replace(" ", "_"))
-    os.makedirs(prompt_dir, exist_ok=True)
-    image_path = os.path.join(prompt_dir, f"{steps}_steps.png")
-    image.save(image_path)
-    st.success(f"Image saved to: {image_path}")
-
-    clip_score = calculate_clip_score(image_path, prompt, device)
-    st.write(f"CLIP Score: {clip_score}")
-
-    if st.button("Start LoRA Training"):
-        st.write(f"Starting LoRA training with rank {rank} and alpha {alpha}.")
-        train_lora(
-            vae=pipe.vae, 
-            unet=pipe.unet, 
-            text_encoder=pipe.text_encoder, 
-            tokenizer=pipe.tokenizer,
-            noise_scheduler=pipe.scheduler,
-            dataloader=create_dataloader(folder_path=config.get("DATASET_PATH"), prompt=prompt, batch_size=1),  # Provide the dataloader here
-            device=device,
-            lora_rank=rank,
-            lora_alpha=alpha,
-            num_epochs=20,  
-            lr=5e-5,
-            save_dir=config.get("TRAINING_FOLDER_NAME")
-        )
-
+    with st.spinner("Generating image..."):
+        pipe.unet.eval()
+        pipe.vae.eval()
+        pipe.text_encoder.eval()
+        with torch.inference_mode():
+            image = pipe(prompt, num_inference_steps=num_inference_steps, guidance_scale=7.5).images[0]
+        
+        # Display the generated image
+        st.image(image, caption="Generated Image", use_column_width=True)
+        save_path = os.path.join("outputs", f"{prompt.replace(' ', '_')}.png")
+        image.save(save_path)
+        st.success(f"Image saved to {save_path}")
